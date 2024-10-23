@@ -1,0 +1,143 @@
+import os
+import h5py
+import numpy as np
+import matplotlib.pyplot as plt
+import cv2
+
+# Define constants
+proc_directory = r'E:\EuXFEL_5157_Data_Part2\proc'
+run_id = 121  # Change the run number here
+file_name = f'CORR-R{run_id:04d}-HPVX01-S00000.h5'
+
+# Define the specific train and frame range to analyze
+train_id = 3
+frame_2 = 2  # Frame 2
+frame_3 = 3  # Frame 5
+
+# Construct the proc_directory dynamically
+proc_directory = os.path.join(proc_directory, f'r{run_id:04d}')
+full_path = os.path.join(proc_directory, file_name)
+
+def get_frame(file_path, train_id, frame_number):
+    """Load a specific frame from the HDF5 file."""
+    with h5py.File(file_path, "r") as f:
+        return f['INSTRUMENT']['SPB_EHD_MIC']['CORR']['HPVX2_1:output']['data']['image']['pixels'][train_id, frame_number]
+
+def apply_roi(image, roi):
+    """Apply Region of Interest (ROI) to the frame."""
+    x_start, y_start, x_end, y_end = roi
+    return image[y_start:y_end, x_start:x_end]
+
+# Load the frames 2 and 5
+frame_2_image = get_frame(full_path, train_id, frame_2)
+frame_3_image = get_frame(full_path, train_id, frame_3)
+
+# Apply Gaussian convolution filter to frame 2 and frame 5
+filtered_frame_2 = cv2.GaussianBlur(frame_2_image, (5, 5), 5)
+filtered_frame_3 = cv2.GaussianBlur(frame_3_image, (5, 5), 5)
+
+# Subtract the Gaussian filtered image from the original image
+difference_image_2 = cv2.subtract(frame_2_image, filtered_frame_2)
+difference_image_3 = cv2.subtract(frame_3_image, filtered_frame_3)
+
+# Now proceed with ROI and optical flow analysis
+# Define ROI coordinates (x_start, y_start, x_end, y_end)
+roi = (210, 35, 400, 225)  # Example ROI coordinates
+
+# Apply ROI to both difference images
+image_2_roi = apply_roi(difference_image_2, roi)
+image_3_roi = apply_roi(difference_image_3, roi)
+
+def compute_image_gradients(image1, image2):
+    """Compute gradients of image intensity in x, y, and t directions."""
+    Ix = cv2.Sobel(image1, cv2.CV_64F, 1, 0, ksize=3)  # Gradient along x
+    Iy = cv2.Sobel(image1, cv2.CV_64F, 0, 1, ksize=3)  # Gradient along y
+    It = image2 - image1  # Temporal gradient (change over time)
+    return Ix, Iy, It
+
+def optical_flow(Ix, Iy, It, alpha=2, num_iter=100):
+    """Compute optical flow using the Horn-Schunck method."""
+    u = np.zeros_like(Ix)
+    v = np.zeros_like(Iy)
+    
+    # Averaging kernel
+    kernel = np.array([[1/12, 1/6, 1/12], [1/6, 0, 1/6], [1/12, 1/6, 1/12]])
+    
+    for _ in range(num_iter):
+        # Compute local averages of u and v
+        u_avg = cv2.filter2D(u, -1, kernel)
+        v_avg = cv2.filter2D(v, -1, kernel)
+        
+        # Update flow estimates
+        P = (Ix * u_avg + Iy * v_avg + It) / (alpha**2 + Ix**2 + Iy**2 + 1e-5)  # Add a small constant to avoid division by zero
+        u = u_avg - Ix * P
+        v = v_avg - Iy * P
+    
+    return u, v
+
+# Convert pixel velocity to meters/second
+def convert_to_velocity(u, v, fps, px_size):
+    """Convert pixel displacement to velocity in meters/second."""
+    # Time between frames (in seconds)
+    delta_t = 1 / fps
+    # Convert displacement in pixels to displacement in meters
+    u_meters_per_sec = (u * px_size) / delta_t
+    v_meters_per_sec = (v * px_size) / delta_t
+    return u_meters_per_sec, v_meters_per_sec
+
+def visualize_flow(image, u, v, step=3, title=""):
+    """Visualize the optical flow as quiver (vector) plots in meters/second."""
+    plt.figure(figsize=(8, 6))
+    
+    # Plot the background image (one of the frames)
+    plt.imshow(image_2_roi, cmap='gray')
+    
+    # Create a mesh grid for plotting the vectors
+    h, w = u.shape
+    y, x = np.mgrid[0:h, 0:w]
+    
+    # Subsample u, v, x, and y by the step size
+    u_subsampled = u[::step, ::step]
+    v_subsampled = v[::step, ::step]
+    x_subsampled = x[::step, ::step]
+    y_subsampled = y[::step, ::step]
+    
+    # Calculate the magnitude of the flow
+    magnitude = np.sqrt(u_subsampled**2 + v_subsampled**2)
+    mean_magnitude = np.mean(magnitude)  # Compute mean magnitude
+    
+    # Create a mask for vectors with magnitude >= half the mean magnitude
+    mask = magnitude >= 0.2  # You can adjust the threshold
+    
+    # Apply the mask to filter the vectors
+    u_masked = u_subsampled[mask]
+    v_masked = v_subsampled[mask]
+    x_masked = x_subsampled[mask]
+    y_masked = y_subsampled[mask]
+    magnitude_masked = magnitude[mask]
+    
+    scale_factor = np.max(magnitude_masked) / 15  # Adjust scale factor for better visibility
+    
+    # Plot the velocity vectors as arrows (quiver plot), color-coded based on magnitude
+    plt.quiver(x_masked, y_masked, u_masked, v_masked, magnitude_masked, 
+               angles='xy', scale_units='xy', scale=scale_factor, cmap='jet')
+    
+    # Add colorbar to show the magnitude of the velocity vectors in m/s
+    plt.colorbar(label='Velocity Magnitude (m/s)')
+    
+    plt.title(title)
+    plt.show()
+
+# Compute gradients between the ROI-applied difference images (frame 2 and frame 5)
+Ix, Iy, It = compute_image_gradients(image_2_roi, image_3_roi)
+
+# Compute optical flow between frame 2 and frame 5 (in pixel space)
+u_f, v_f = optical_flow(Ix, Iy, It)
+
+# Convert flow from pixels to meters/second
+fps = 1.13e6  # Frames per second
+px_size = 3.2e-6  # Pixel size in meters
+u_f_velocity, v_f_velocity = convert_to_velocity(u_f, v_f, fps, px_size)
+
+# Visualize the flow field between frame 2 and frame 5 in m/s
+visualize_flow(image_2_roi, u_f_velocity, v_f_velocity, title="Optical Flow Vectors: Frame 2 to Frame 3 (Velocity in m/s)")
