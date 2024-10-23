@@ -1,5 +1,3 @@
-# Optical-Flow---Horn_schunck
-
 # Code breakdown
 
 ## Load image
@@ -7,10 +5,10 @@ All images used are from proc directory (real-time flat-field corrected images u
 
 ## High-Pass adaptive filter
 Filtering of the image is done using
-   
-   a. Gaussian convolution (5x5 kernel, std. dev = 5) of the proc image
-   b. Subtracting 'a' from original proc image to produce difference_image
-   c. difference_image is used for ROI and Optical Flow
+
+    a. Gaussian convolution (5x5 kernel, std. dev = 5) of the proc image
+    b. Subtracting 'a' from original proc image to produce difference_image
+    c. difference_image is used for ROI and Optical Flow
 
 ## ROI identification
     a. Identify coordinates
@@ -39,4 +37,5 @@ Please see the powerpoint for reference.
     d. Masking out
         I used masked out to display only quiver plots related to the moving objects and only show the results based on the threshold.
         For threshold, I use either the mean velocity magnitude or fixed value (e.g. >= 0.2)
+
         
