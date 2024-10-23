@@ -12,7 +12,7 @@ file_name = f'CORR-R{run_id:04d}-HPVX01-S00000.h5'
 # Define the specific train and frame range to analyze
 train_id = 3
 frame_2 = 2  # Frame 2
-frame_3 = 3  # Frame 5
+frame_3 = 3  # Frame 3
 
 # Construct the proc_directory dynamically
 proc_directory = os.path.join(proc_directory, f'r{run_id:04d}')
@@ -28,11 +28,11 @@ def apply_roi(image, roi):
     x_start, y_start, x_end, y_end = roi
     return image[y_start:y_end, x_start:x_end]
 
-# Load the frames 2 and 5
+# Load the frames 2 and 3
 frame_2_image = get_frame(full_path, train_id, frame_2)
 frame_3_image = get_frame(full_path, train_id, frame_3)
 
-# Apply Gaussian convolution filter to frame 2 and frame 5
+# Apply Gaussian convolution filter to frame 2 and frame 3
 filtered_frame_2 = cv2.GaussianBlur(frame_2_image, (5, 5), 5)
 filtered_frame_3 = cv2.GaussianBlur(frame_3_image, (5, 5), 5)
 
@@ -128,10 +128,10 @@ def visualize_flow(image, u, v, step=3, title=""):
     plt.title(title)
     plt.show()
 
-# Compute gradients between the ROI-applied difference images (frame 2 and frame 5)
+# Compute gradients between the ROI-applied difference images (frame 2 and frame 3)
 Ix, Iy, It = compute_image_gradients(image_2_roi, image_3_roi)
 
-# Compute optical flow between frame 2 and frame 5 (in pixel space)
+# Compute optical flow between frame 2 and frame 3 (in pixel space)
 u_f, v_f = optical_flow(Ix, Iy, It)
 
 # Convert flow from pixels to meters/second
@@ -139,5 +139,5 @@ fps = 1.13e6  # Frames per second
 px_size = 3.2e-6  # Pixel size in meters
 u_f_velocity, v_f_velocity = convert_to_velocity(u_f, v_f, fps, px_size)
 
-# Visualize the flow field between frame 2 and frame 5 in m/s
+# Visualize the flow field between frame 2 and frame 3 in m/s
 visualize_flow(image_2_roi, u_f_velocity, v_f_velocity, title="Optical Flow Vectors: Frame 2 to Frame 3 (Velocity in m/s)")
